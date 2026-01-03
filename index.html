@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Stopwatch</title>
+    <style>
+        :root {
+            --ios-orange: #ff9f0a;
+            --ios-green: #30d158;
+            --ios-red: #ff453a;
+            --ios-grey: #333333;
+            --ios-text: #ffffff;
+            --btn-size: 82px;
+        }
+
+        * {
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background-color: #000;
+            color: var(--ios-text);
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .timer-container {
+            flex: 1.5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-variant-numeric: tabular-nums; 
+        }
+
+        .timer-display {
+            font-size: 88px;
+            font-weight: 200;
+            letter-spacing: -2px;
+            display: flex;
+        }
+
+        .min-box { min-width: 110px; text-align: right; }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            padding: 0 25px 60px 25px;
+        }
+
+        .btn {
+            width: var(--btn-size);
+            height: var(--btn-size);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 17px;
+            transition: transform 0.05s linear;
+        }
+
+        .btn:active { transform: scale(0.90); opacity: 0.8; }
+
+        .btn-lap { background: #1c1c1e; color: #fff; }
+        .btn-start { background: #162a18; color: var(--ios-green); }
+        .btn-stop { background: #321312; color: var(--ios-red); }
+
+        .tab-bar {
+            height: 85px;
+            display: flex;
+            justify-content: space-around;
+            border-top: 0.3px solid #333;
+            background: #000;
+        }
+
+        .tab-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #8e8e93;
+            font-size: 10px;
+        }
+
+        .tab-item.active { color: var(--ios-orange); }
+        .tab-item svg { width: 26px; height: 26px; margin-bottom: 4px; }
+
+        /* Secret UI */
+        #overlay { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.8); z-index: 999; }
+        #secret-menu {
+            display: none; position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            background: #1c1c1e; padding: 25px; border-radius: 20px; width: 85%; z-index: 1000; border: 1px solid #333;
+        }
+        input { width: 100%; padding: 15px; margin: 10px 0; background: #2c2c2e; border: none; border-radius: 10px; color: #fff; font-size: 18px; outline: none; }
+        .save-btn { width: 100%; padding: 15px; background: var(--ios-orange); border: none; border-radius: 10px; font-weight: 600; color: #fff; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="timer-container">
+        <div class="timer-display">
+            <span id="min-area" class="min-box">00</span>:<span id="sec-display">00</span>.<span id="ms-display">00</span>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="btn btn-lap" id="lapResetBtn">Lap</div>
+        <div class="btn btn-start" id="startBtn">Start</div>
+    </div>
+
+    <div class="tab-bar">
+        <div class="tab-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>World Clock</div>
+        <div class="tab-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5z"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M22 12h-2"/><path d="M4 12H2"/></svg>Alarm</div>
+        <div class="tab-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 12V7"/><path d="M12 12l3.5 3.5"/></svg>Stopwatch</div>
+        <div class="tab-item" id="silent-reset-zone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 12h5"/></svg>Timer</div>
+    </div>
+
+    <div id="overlay"></div>
+    <div id="secret-menu">
+        <h2 style="margin:0 0 15px 0; text-align:center;">Configuration</h2>
+        <input type="number" id="forceNum" placeholder="Force Number (29-99)">
+        <input type="number" id="triggerCount" placeholder="Trigger on Stop #">
+        <button class="save-btn" onclick="saveSettings()">Save & Hide</button>
+    </div>
+
+    <script>
+        let startTime, elapsedTime = 0, timerInterval;
+        let isRunning = false;
+        let stopCount = 0;
+        let forceValue = null;
+        let triggerAt = null;
+
+        const minArea = document.getElementById('min-area');
+        const secDisplay = document.getElementById('sec-display');
+        const msDisplay = document.getElementById('ms-display');
+        const startBtn = document.getElementById('startBtn');
+        const lapResetBtn = document.getElementById('lapResetBtn');
+        const menu = document.getElementById('secret-menu');
+        const overlay = document.getElementById('overlay');
+
+        // Load Persisted Data
+        window.onload = () => {
+            const savedForce = localStorage.getItem('forceValue');
+            const savedTrigger = localStorage.getItem('triggerAt');
+            if (savedForce) {
+                forceValue = parseInt(savedForce);
+                document.getElementById('forceNum').value = savedForce;
+            }
+            if (savedTrigger) {
+                triggerAt = parseInt(savedTrigger);
+                document.getElementById('triggerCount').value = savedTrigger;
+            }
+        };
+
+        // Long Press Secret Entrance
+        let pressTimer;
+        minArea.addEventListener('touchstart', () => {
+            pressTimer = setTimeout(() => {
+                menu.style.display = 'block';
+                overlay.style.display = 'block';
+            }, 1000);
+        });
+        minArea.addEventListener('touchend', () => clearTimeout(pressTimer));
+
+        // Silent Reset (Triple Tap)
+        let tapCount = 0;
+        document.getElementById('silent-reset-zone').addEventListener('touchstart', () => {
+            tapCount++;
+            setTimeout(() => { tapCount = 0; }, 500);
+            if (tapCount === 3) {
+                stopCount = 0;
+                if (navigator.vibrate) navigator.vibrate(50);
+            }
+        });
+
+        function saveSettings() {
+            forceValue = parseInt(document.getElementById('forceNum').value);
+            triggerAt = parseInt(document.getElementById('triggerCount').value);
+            
+            // Save to Persistent Storage
+            localStorage.setItem('forceValue', forceValue);
+            localStorage.setItem('triggerAt', triggerAt);
+            
+            menu.style.display = 'none';
+            overlay.style.display = 'none';
+            stopCount = 0; 
+        }
+
+        function updateDisplay(time) {
+            let m = Math.floor(time / 60000);
+            let s = Math.floor((time % 60000) / 1000);
+            let ms = Math.floor((time % 1000) / 10);
+            minArea.innerText = m.toString().padStart(2, '0');
+            secDisplay.innerText = s.toString().padStart(2, '0');
+            msDisplay.innerText = ms.toString().padStart(2, '0');
+        }
+
+        startBtn.addEventListener('click', () => {
+            if (navigator.vibrate) navigator.vibrate(15);
+            if (!isRunning) {
+                isRunning = true;
+                startBtn.innerText = 'Stop';
+                startBtn.className = 'btn btn-stop';
+                lapResetBtn.innerText = 'Lap';
+                startTime = Date.now() - elapsedTime;
+                timerInterval = setInterval(() => {
+                    elapsedTime = Date.now() - startTime;
+                    updateDisplay(elapsedTime);
+                }, 10);
+            } else {
+                isRunning = false;
+                clearInterval(timerInterval);
+                startBtn.innerText = 'Start';
+                startBtn.className = 'btn btn-start';
+                lapResetBtn.innerText = 'Reset';
+                stopCount++;
+                if (stopCount === triggerAt && forceValue) { applyForce(); }
+            }
+        });
+
+        lapResetBtn.addEventListener('click', () => {
+            if (!isRunning) {
+                elapsedTime = 0;
+                updateDisplay(0);
+                lapResetBtn.innerText = 'Lap';
+            }
+        });
+
+        function applyForce() {
+            let s = Math.floor(Math.random() * 5) + 3; 
+            let ms = forceValue - s;
+            if (ms < 0) { s = 0; ms = forceValue; }
+            secDisplay.innerText = s.toString().padStart(2, '0');
+            msDisplay.innerText = ms.toString().padStart(2, '0');
+            elapsedTime = (parseInt(minArea.innerText) * 60000) + (s * 1000) + (ms * 10);
+        }
+    </script>
+</body>
+</html>
